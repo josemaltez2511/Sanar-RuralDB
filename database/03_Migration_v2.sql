@@ -75,7 +75,7 @@ BEGIN TRY
 
     -- Verificar que existan las columnas obligatorias del esquema previo en dbo.Usuarios
     IF COL_LENGTH('dbo.Usuarios', 'Correo') IS NULL
-       OR COL_LENGTH('dbo.Usuarios', 'Contrasena') IS NULL
+       OR COL_LENGTH('dbo.Usuarios', 'ContrasenaHash') IS NULL
        OR COL_LENGTH('dbo.Usuarios', 'IdRol') IS NULL
        OR COL_LENGTH('dbo.Usuarios', 'Estado') IS NULL
     BEGIN
