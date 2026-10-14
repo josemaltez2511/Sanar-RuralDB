@@ -1,11 +1,43 @@
-USE [SanarRuralDB];
+/* ==============================================================================
+   SANAR RURAL - ESQUEMA DDL DE TRANSICIÓN V2 (CREACIÓN DESDE CERO / BASE DESECHABLE)
+   Motor: Microsoft SQL Server 2022
+   Archivo: database/01_Schema.sql
+
+   ⚠️ ADVERTENCIA DE SEGURIDAD OBLIGATORIA (SCRIPT DESTRUCTIVO):
+   ------------------------------------------------------------------------------
+   - Este script es DESTRUCTIVO: contiene instrucciones DROP TABLE IF EXISTS
+     que eliminan en cascada la totalidad de tablas y datos existentes.
+   - Está diseñado EXCLUSIVAMENTE para:
+       1. Inicializar entornos de desarrollo o bases de datos nuevas desde cero.
+       2. Levantar bases de datos desechables para pruebas automatizadas o unitarias.
+   - PROHIBICIÓN: NUNCA DEBE EJECUTARSE como migración sobre bases de datos existentes
+     con datos de trabajo, pruebas activas o producción (como SanarRuralDB o SanarRuralDB_Dev).
+   - Para actualizar una base de datos existente preservando datos históricos y de auditoría,
+     utilice de forma exclusiva el script incremental: database/03_Migration_v2.sql.
+   ============================================================================== */
+
+/* ==============================================================================
+   COMPROBACIONES DE SEGURIDAD PREVENTIVAS:
+   1. Prohibición en bases de datos del sistema.
+   2. Prohibición de destrucción en bases de datos que ya contienen tablas de Sanar Rural.
+   ============================================================================== */
+IF DB_NAME() IN (N'master', N'model', N'msdb', N'tempdb')
+BEGIN
+    RAISERROR(N'⚠️ OPERACIÓN ABORTADA: No se permite ejecutar la creación de esquema en bases de datos del sistema (%s). Cree y seleccione una base de datos de usuario antes de continuar.', 16, 1, DB_NAME());
+    SET NOEXEC ON;
+END;
 GO
 
-/* =========================================================
-   SANAR RURAL v1
-   SQL Server 2022
-   Reconstrucción completa de la estructura
-   ========================================================= */
+IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_SCHEMA = 'dbo'
+      AND TABLE_NAME IN ('Usuarios', 'Roles', 'Pacientes', 'Doctores', 'Citas', 'Hospitales')
+)
+BEGIN
+    RAISERROR(N'⚠️ OPERACIÓN ABORTADA POR SEGURIDAD: La base de datos actual ya contiene tablas del esquema de Sanar Rural. database/01_Schema.sql es destructivo y solo debe ejecutarse en una base de datos completamente nueva o desechable. Si desea migrar una base de datos existente preservando datos históricos, use exclusivamente database/03_Migration_v2.sql.', 16, 1);
+    SET NOEXEC ON;
+END;
+GO
 
 SET NOCOUNT ON;
 GO
@@ -29,6 +61,8 @@ DROP TABLE IF EXISTS dbo.DoctorEspecialidad;
 DROP TABLE IF EXISTS dbo.ContactosEmergencia;
 DROP TABLE IF EXISTS dbo.Pacientes;
 DROP TABLE IF EXISTS dbo.Doctores;
+DROP TABLE IF EXISTS dbo.PersonalAdministrativo;
+DROP TABLE IF EXISTS dbo.Administradores;
 
 DROP TABLE IF EXISTS dbo.Hospitales;
 DROP TABLE IF EXISTS dbo.Especialidades;
@@ -72,7 +106,8 @@ CREATE TABLE dbo.Usuarios
 (
     IdUsuario INT IDENTITY(1,1) NOT NULL,
     IdRol INT NOT NULL,
-    Correo NVARCHAR(150) NOT NULL,
+    NombreUsuario NVARCHAR(50) NOT NULL,
+    Correo NVARCHAR(150) NULL, -- Preservado temporalmente para esquema de transición
     ContrasenaHash NVARCHAR(255) NOT NULL,
     FechaRegistro DATETIME2 NOT NULL
         CONSTRAINT DF_Usuarios_FechaRegistro
@@ -84,8 +119,8 @@ CREATE TABLE dbo.Usuarios
     CONSTRAINT PK_Usuarios
         PRIMARY KEY (IdUsuario),
 
-    CONSTRAINT UQ_Usuarios_Correo
-        UNIQUE (Correo),
+    CONSTRAINT UQ_Usuarios_NombreUsuario
+        UNIQUE (NombreUsuario),
 
     CONSTRAINT FK_Usuarios_Roles
         FOREIGN KEY (IdRol)
@@ -180,9 +215,11 @@ CREATE TABLE dbo.Pacientes
     Genero NVARCHAR(30) NULL,
 
     Telefono NVARCHAR(30) NULL,
+    Correo NVARCHAR(150) NULL,
 
     IdComunidad INT NOT NULL,
-    Direccion NVARCHAR(300) NULL,
+    Direccion NVARCHAR(500) NULL,
+    ReferenciaAdicional NVARCHAR(500) NULL,
 
     TipoSangre NVARCHAR(5) NULL,
 
@@ -303,6 +340,7 @@ CREATE TABLE dbo.Doctores
     NumeroLicencia NVARCHAR(50) NOT NULL,
 
     Telefono NVARCHAR(30) NULL,
+    Correo NVARCHAR(150) NULL,
 
     Foto VARBINARY(MAX) NULL,
     FotoNombre NVARCHAR(255) NULL,
@@ -334,7 +372,92 @@ GO
 
 
 /* =========================================================
-   10. ESPECIALIDADES
+   10. PERSONAL ADMINISTRATIVO
+   ========================================================= */
+
+CREATE TABLE dbo.PersonalAdministrativo
+(
+    IdPersonalAdministrativo INT IDENTITY(1,1) NOT NULL,
+    IdUsuario INT NULL,
+
+    PrimerNombre NVARCHAR(50) NOT NULL,
+    SegundoNombre NVARCHAR(50) NULL,
+    PrimerApellido NVARCHAR(50) NOT NULL,
+    SegundoApellido NVARCHAR(50) NULL,
+
+    Cedula NVARCHAR(20) NULL,
+    Telefono NVARCHAR(30) NULL,
+    Correo NVARCHAR(150) NULL,
+    Cargo NVARCHAR(100) NULL,
+
+    Estado BIT NOT NULL
+        CONSTRAINT DF_PersonalAdministrativo_Estado
+        DEFAULT 1,
+
+    CONSTRAINT PK_PersonalAdministrativo
+        PRIMARY KEY (IdPersonalAdministrativo),
+
+    CONSTRAINT FK_PersonalAdministrativo_Usuarios
+        FOREIGN KEY (IdUsuario)
+        REFERENCES dbo.Usuarios(IdUsuario)
+);
+GO
+
+CREATE UNIQUE INDEX UX_PersonalAdministrativo_IdUsuario
+ON dbo.PersonalAdministrativo(IdUsuario)
+WHERE IdUsuario IS NOT NULL;
+GO
+
+CREATE UNIQUE INDEX UX_PersonalAdministrativo_Cedula
+ON dbo.PersonalAdministrativo(Cedula)
+WHERE Cedula IS NOT NULL;
+GO
+
+
+/* =========================================================
+   11. ADMINISTRADORES
+   ========================================================= */
+
+CREATE TABLE dbo.Administradores
+(
+    IdAdministrador INT IDENTITY(1,1) NOT NULL,
+    IdUsuario INT NULL,
+
+    PrimerNombre NVARCHAR(50) NOT NULL,
+    SegundoNombre NVARCHAR(50) NULL,
+    PrimerApellido NVARCHAR(50) NOT NULL,
+    SegundoApellido NVARCHAR(50) NULL,
+
+    Cedula NVARCHAR(20) NULL,
+    Telefono NVARCHAR(30) NULL,
+    Correo NVARCHAR(150) NULL,
+
+    Estado BIT NOT NULL
+        CONSTRAINT DF_Administradores_Estado
+        DEFAULT 1,
+
+    CONSTRAINT PK_Administradores
+        PRIMARY KEY (IdAdministrador),
+
+    CONSTRAINT FK_Administradores_Usuarios
+        FOREIGN KEY (IdUsuario)
+        REFERENCES dbo.Usuarios(IdUsuario)
+);
+GO
+
+CREATE UNIQUE INDEX UX_Administradores_IdUsuario
+ON dbo.Administradores(IdUsuario)
+WHERE IdUsuario IS NOT NULL;
+GO
+
+CREATE UNIQUE INDEX UX_Administradores_Cedula
+ON dbo.Administradores(Cedula)
+WHERE Cedula IS NOT NULL;
+GO
+
+
+/* =========================================================
+   12. ESPECIALIDADES
    ========================================================= */
 
 CREATE TABLE dbo.Especialidades
@@ -816,4 +939,7 @@ GO
 
 SELECT COUNT(*) AS TotalClavesForaneas
 FROM sys.foreign_keys;
+GO
+
+SET NOEXEC OFF;
 GO
